@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>泵入药物配比计算器</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230f766e'/><text x='50' y='68' font-size='52' text-anchor='middle'>💉</text></svg>">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    background: #f8fafc; color: #1e293b; padding: 16px 14px 48px;
+    max-width: 480px; margin: 0 auto; font-size: 15px;
+  }
+  .header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .logo { width: 44px; height: 44px; border-radius: 12px; background: #0d9488; color: #fff;
+    font-size: 24px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .title { font-size: 20px; font-weight: 700; }
+  .subtitle { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+  .tabs { display: flex; background: #e2e8f0; border-radius: 10px; padding: 4px; margin-bottom: 14px; }
+  .tab { flex: 1; text-align: center; padding: 10px 0; font-weight: 600; color: #64748b;
+    border-radius: 8px; cursor: pointer; border: none; background: transparent; font-size: 15px; }
+  .tab.active { background: #fff; color: #0f766e; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+
+  .card { background: #fff; border-radius: 14px; padding: 18px; margin-bottom: 14px;
+    box-shadow: 0 1px 8px rgba(15,118,110,.07); }
+  .card-title { font-size: 16px; font-weight: 700; color: #334155; text-align: center; margin-bottom: 16px; }
+
+  .label { font-size: 13px; font-weight: 500; color: #475569; margin: 14px 0 6px; }
+  .label:first-of-type { margin-top: 0; }
+  .label-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; margin-bottom: 6px; }
+  .label-row .label { margin: 0; }
+  input, select {
+    width: 100%; height: 46px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    padding: 0 14px; font-size: 19px; font-weight: 600; color: #1e293b; background: #fff;
+    outline: none; font-family: inherit;
+  }
+  input:focus, select:focus { border-color: #0d9488; }
+  select { font-size: 16px; appearance: auto; }
+  .hint { font-size: 11px; color: #94a3b8; margin-top: 5px; }
+
+  .row2 { display: flex; gap: 10px; }
+  .col { flex: 1; min-width: 0; }
+
+  .unit-switch { display: flex; background: #f1f5f9; border-radius: 8px; padding: 3px; }
+  .unit { font-size: 12px; font-weight: 600; color: #64748b; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+  .unit.active { background: #fff; color: #0f766e; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .step-btn { width: 46px; height: 46px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: 24px; color: #334155; background: #fff; display: flex; align-items: center;
+    justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .step-input { flex: 1; min-width: 0; text-align: center; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 12px; font-weight: 600; color: #0f766e; background: #f0fdfa;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; border: none; font-family: inherit; }
+
+  .result-card { border: 1.5px solid #99f6e4; }
+  .result-title { color: #0f766e; }
+  .result-row { display: flex; justify-content: space-between; align-items: baseline;
+    padding: 9px 0; border-bottom: 1px solid #f1f5f9; gap: 8px; }
+  .result-row:last-child { border-bottom: none; }
+  .result-label { font-size: 14px; color: #64748b; }
+  .result-value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .result-strong .result-value { font-size: 21px; font-weight: 700; color: #0f766e; }
+  .result-unit { font-size: 11px; font-weight: 400; color: #94a3b8; }
+
+  .alert { border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.6; margin-bottom: 14px; }
+  .alert-error { background: #fef2f2; color: #b91c1c; }
+  .alert-warn { background: #fffbeb; color: #b45309; }
+
+  .copy-btn { height: 50px; line-height: 50px; text-align: center; background: #0d9488;
+    color: #fff; font-size: 17px; font-weight: 600; border-radius: 12px; cursor: pointer;
+    margin-bottom: 16px; user-select: none; }
+  .copy-btn.disabled { opacity: .4; }
+
+  .footer { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+    padding: 12px 14px; font-size: 11px; line-height: 1.7; color: #92400e; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">💉</div>
+  <div>
+    <div class="title">泵入药物配比计算器</div>
+    <div class="subtitle">微量泵维持剂量 · 快速换算</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" id="tabVial" onclick="switchMode('vial')">整支配比</button>
+  <button class="tab" id="tabReverse" onclick="switchMode('reverse')">反向速配</button>
+</div>
+
+<div class="card">
+  <div class="card-title">输入参数</div>
+
+  <div class="label">药物（自动带出原液规格，可修改）</div>
+  <select id="drugIdx" onchange="onDrugChange()"></select>
+  <div class="hint" id="rangeHint"></div>
+
+  <div class="row2">
+    <div class="col">
+      <div class="label">原液浓度 · 每支 mg</div>
+      <input id="specA" type="number" inputmode="decimal" placeholder="如 2" oninput="recompute()">
+    </div>
+    <div class="col">
+      <div class="label">每支 ml</div>
+      <input id="specB" type="number" inputmode="decimal" placeholder="如 1" oninput="recompute()">
+    </div>
+  </div>
+
+  <div class="label">患者体重（kg）</div>
+  <input id="weight" type="number" inputmode="decimal" placeholder="如 60" oninput="recompute()">
+
+  <div class="label-row">
+    <div class="label">目标维持剂量</div>
+    <div class="unit-switch">
+      <span class="unit active" id="unitMin" onclick="setUnit('min')">μg/kg/min</span>
+      <span class="unit" id="unitHour" onclick="setUnit('hour')">μg/kg/h</span>
+    </div>
+  </div>
+  <input id="dose" type="number" inputmode="decimal" placeholder="如 0.1" oninput="recompute()">
+
+  <div id="vialFields">
+    <div class="row2">
+      <div class="col">
+        <div class="label">使用支数</div>
+        <div class="stepper">
+          <button class="step-btn" onclick="vialStep(-1)">−</button>
+          <input class="step-input" id="vials" type="number" inputmode="numeric" value="1" oninput="recompute()">
+          <button class="step-btn" onclick="vialStep(1)">＋</button>
+        </div>
+      </div>
+      <div class="col">
+        <div class="label">泵速（ml/h）</div>
+        <input id="pump" type="number" inputmode="decimal" placeholder="如 5" value="5" oninput="recompute()">
+      </div>
+    </div>
+  </div>
+
+  <div id="reverseFields" style="display:none">
+    <div class="row2">
+      <div class="col">
+        <div class="label">抽取原液（ml）</div>
+        <input id="drawX" type="number" inputmode="decimal" placeholder="如 5" oninput="recompute()">
+        <div class="chips" id="drawChips"></div>
+      </div>
+      <div class="col">
+        <div class="label">稀释至总量（ml）</div>
+        <input id="totalV" type="number" inputmode="decimal" placeholder="如 50" value="50" oninput="recompute()">
+        <div class="chips">
+          <button class="chip" onclick="setTotal('20')">20</button>
+          <button class="chip" onclick="setTotal('50')">50</button>
+          <button class="chip" onclick="setTotal('100')">100</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-error" id="errMsg" style="display:none"></div>
+
+<div class="card result-card" id="resultCard" style="display:none">
+  <div class="card-title result-title">配比结果</div>
+  <div id="resultRows"></div>
+</div>
+
+<div class="alert alert-warn" id="warnMsg" style="display:none"></div>
+
+<div class="copy-btn disabled" id="copyBtn" onclick="copyResult()">复制配比结果</div>
+
+<div class="footer">⚠️ 本工具仅供临床参考，计算结果请与医嘱、药品说明书及科室规范核对后使用。药物参考剂量范围仅为常见文献值，不替代临床判断。</div>
+
+<script>
+var DRUGS = [
+  { name: '自定义 / 其他药物', specMg: 0, specMl: 0, range: null },
+  { name: '去甲肾上腺素（2mg/1ml）', specMg: 2, specMl: 1, range: [0.05, 1] },
+  { name: '肾上腺素（1mg/1ml）', specMg: 1, specMl: 1, range: [0.01, 0.5] },
+  { name: '多巴胺（20mg/2ml）', specMg: 20, specMl: 2, range: [2, 20] },
+  { name: '异丙肾上腺素（1mg/2ml）', specMg: 1, specMl: 2, range: [0.01, 0.1] },
+  { name: '硝酸甘油（5mg/1ml）', specMg: 5, specMl: 1, range: [0.25, 5] },
+  { name: '硝普钠（50mg/2ml）', specMg: 50, specMl: 2, range: [0.5, 10] },
+  { name: '胺碘酮（150mg/3ml）', specMg: 150, specMl: 3, range: [5, 15] },
+]
+
+var state = { mode: 'vial', unit: 'min', drugIdx: 1, canCopy: false, copyText: '' }
+
+function num(id) { var v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : NaN }
+function val(id) { return document.getElementById(id).value }
+function fmt(n) { if (!isFinite(n)) return '--'; var r = Math.round(n * 100) / 100; return String(parseFloat(r.toFixed(2))) }
+function fmtDur(hours) {
+  if (!isFinite(hours) || hours <= 0) return '--'
+  var h = Math.floor(hours), m = Math.round((hours - h) * 60)
+  if (h <= 0) return m + ' 分钟'
+  if (m === 0) return h + ' 小时'
+  return h + ' 小时 ' + m + ' 分'
+}
+
+function init() {
+  var sel = document.getElementById('drugIdx')
+  DRUGS.forEach(function (d, i) { sel.options.add(new Option(d.name, i)) })
+  sel.value = 1
+  onDrugChange()
+}
+
+function switchMode(m) {
+  state.mode = m
+  document.getElementById('tabVial').className = 'tab' + (m === 'vial' ? ' active' : '')
+  document.getElementById('tabReverse').className = 'tab' + (m === 'reverse' ? ' active' : '')
+  document.getElementById('vialFields').style.display = m === 'vial' ? '' : 'none'
+  document.getElementById('reverseFields').style.display = m === 'reverse' ? '' : 'none'
+  recompute()
+}
+
+function setUnit(u) {
+  state.unit = u
+  document.getElementById('unitMin').className = 'unit' + (u === 'min' ? ' active' : '')
+  document.getElementById('unitHour').className = 'unit' + (u === 'hour' ? ' active' : '')
+  document.getElementById('dose').placeholder = u === 'min' ? '如 0.1' : '如 5'
+  recompute()
+}
+
+function onDrugChange() {
+  var idx = Number(document.getElementById('drugIdx').value)
+  state.drugIdx = idx
+  if (idx > 0) {
+    document.getElementById('specA').value = DRUGS[idx].specMg
+    document.getElementById('specB').value = DRUGS[idx].specMl
+  }
+  renderDrawChips()
+  recompute()
+}
+
+function renderDrawChips() {
+  var B = num('specB'), html = ''
+  if (B > 0) {
+    html += '<button class="chip" onclick="setDraw(\'' + B + '\')">1 支 = ' + fmt(B) + ' ml</button>'
+    html += '<button class="chip" onclick="setDraw(\'' + fmt(B / 2) + '\')">半支 = ' + fmt(B / 2) + ' ml</button>'
+  }
+  document.getElementById('drawChips').innerHTML = html
+}
+
+function setDraw(v) { document.getElementById('drawX').value = v; recompute() }
+function setTotal(v) { document.getElementById('totalV').value = v; recompute() }
+
+function vialStep(d) {
+  var el = document.getElementById('vials')
+  var v = Math.max(1, (Math.floor(parseFloat(el.value) || 1) + d))
+  el.value = v
+  recompute()
+}
+
+function recompute() {
+  var drug = DRUGS[state.drugIdx]
+  var A = num('specA'), B = num('specB'), W = num('weight'), D = num('dose')
+  var k = state.unit === 'min' ? 60 : 1
+  var drugLabel = state.drugIdx > 0 ? drug.name.match(/^(.+?)（/)[1] : '自定义药物'
+
+  // 参考范围提示
+  var rangeHint = '', warnMsg = ''
+  if (drug.range) {
+    rangeHint = '参考剂量范围：' + drug.range[0] + '–' + drug.range[1] + ' μg/kg/min（仅供参考）'
+    if (D > 0) {
+      var perMin = state.unit === 'min' ? D : D / 60
+      if (perMin < drug.range[0]) warnMsg = '当前剂量 ' + fmt(perMin) + ' μg/kg/min 低于' + drugLabel + '常用参考范围，请核对医嘱。'
+      else if (perMin > drug.range[1]) warnMsg = '当前剂量 ' + fmt(perMin) + ' μg/kg/min 高于' + drugLabel + '常用参考范围，请核对医嘱。'
+    }
+  }
+  document.getElementById('rangeHint').textContent = rangeHint
+
+  var rows = [], errMsg = '', copyText = ''
+  state.canCopy = false
+
+  if (A > 0 && B > 0 && W > 0 && D > 0) {
+    var hourlyUg = D * W * k // μg/h
+
+    if (state.mode === 'vial') {
+      var P = num('pump'), N = Math.floor(num('vials'))
+      if (P > 0 && N >= 1) {
+        var T = N * A, stockVol = N * B
+        var cNeed = hourlyUg / P
+        var V = (T * 1000) / cNeed
+        var solvent = V - stockVol
+        if (solvent < -1e-9) {
+          errMsg = '即使不加任何溶剂，' + N + ' 支原液浓度仍低于目标需求。请降低泵速、提高剂量或增加支数后重算。'
+        } else {
+          rows.push(
+            ['取 ' + drugLabel, N + ' 支', '', false],
+            ['药液总量（药物）', fmt(T), 'mg', false],
+            ['原液体积', fmt(stockVol), 'ml', false],
+            ['＋ 加入溶剂量', fmt(solvent), 'ml', true],
+            ['＝ 总液体量', fmt(V), 'ml', true],
+            ['泵入浓度', fmt(cNeed), 'μg/ml', false],
+            ['预计维持时长', fmtDur(V / P), '', false]
+          )
+          copyText = '【' + drugLabel + ' 泵入配比 · 整支模式】\n体重 ' + val('weight') + ' kg，目标剂量 ' + val('dose') + ' μg/kg/' + (state.unit === 'min' ? 'min' : 'h') + '，泵速 ' + val('pump') + ' ml/h\n取 ' + N + ' 支（共 ' + fmt(stockVol) + ' ml / ' + fmt(T) + ' mg），加溶剂 ' + fmt(solvent) + ' ml，稀释至总量 ' + fmt(V) + ' ml\n预计维持 ' + fmtDur(V / P)
+          state.canCopy = true
+        }
+      }
+    } else {
+      var X = num('drawX'), V2 = num('totalV')
+      if (X > 0 && V2 > 0) {
+        if (V2 - X < -1e-9) {
+          errMsg = '总液体量小于抽取量，请检查输入。'
+        } else {
+          var cStock = (1000 * A) / B
+          var cPump = (X * cStock) / V2
+          var P2 = hourlyUg / cPump
+          var solvent2 = V2 - X
+          rows.push(
+            ['抽 ' + drugLabel + '原液', fmt(X), 'ml', true],
+            ['＋ 加入溶剂量', fmt(solvent2), 'ml', true],
+            ['＝ 总液体量', fmt(V2), 'ml', false],
+            ['泵入浓度', fmt(cPump), 'μg/ml', false],
+            ['所需泵速', fmt(P2), 'ml/h', true],
+            ['预计维持时长', fmtDur(V2 / P2), '', false]
+          )
+          copyText = '【' + drugLabel + ' 泵入配比 · 反向速配】\n体重 ' + val('weight') + ' kg，目标剂量 ' + val('dose') + ' μg/kg/' + (state.unit === 'min' ? 'min' : 'h') + '\n抽原液 ' + fmt(X) + ' ml，加溶剂 ' + fmt(solvent2) + ' ml，稀释至总量 ' + fmt(V2) + ' ml\n泵速 ' + fmt(P2) + ' ml/h，预计维持 ' + fmtDur(V2 / P2)
+          state.canCopy = true
+        }
+      }
+    }
+  }
+  state.copyText = copyText
+
+  // 渲染
+  var rowsHtml = ''
+  rows.forEach(function (r) {
+    rowsHtml += '<div class="result-row' + (r[3] ? ' result-strong' : '') + '">' +
+      '<div class="result-label">' + r[0] + '</div>' +
+      '<div class="result-value">' + r[1] + (r[2] ? '<span class="result-unit"> ' + r[2] + '</span>' : '') + '</div></div>'
+  })
+  document.getElementById('resultRows').innerHTML = rowsHtml
+  document.getElementById('resultCard').style.display = rows.length ? '' : 'none'
+  document.getElementById('errMsg').style.display = errMsg ? '' : 'none'
+  document.getElementById('errMsg').textContent = '⚠️ ' + errMsg
+  document.getElementById('warnMsg').style.display = warnMsg ? '' : 'none'
+  document.getElementById('warnMsg').textContent = '⚠️ ' + warnMsg
+  document.getElementById('copyBtn').className = 'copy-btn' + (state.canCopy ? '' : ' disabled')
+}
+
+function copyResult() {
+  if (!state.canCopy) return
+  var text = state.copyText
+  function done() {
+    var btn = document.getElementById('copyBtn')
+    btn.textContent = '已复制 ✓'
+    setTimeout(function () { btn.textContent = '复制配比结果' }, 1500)
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done() })
+  } else { fallbackCopy(text); done() }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try { document.execCommand('copy') } catch (e) {}
+  document.body.removeChild(ta)
+}
+
+init()
+</script>
+</body>
+</html>
