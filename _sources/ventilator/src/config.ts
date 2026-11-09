@@ -45,7 +45,7 @@ export const MODES:Record<Mode,{name:string;intro:string;detail:string}>={
  PSV:{name:'PSV',intro:'患儿触发 · 压力支持 · 流量切换',detail:'呼吸由患儿启动，机器维持支持压力，流量下降至切换阈值或达到最大吸气时间时转为呼气。无有效触发时进入后备通气，恢复后由学员手动切回。'},
  PRVC:{name:'PRVC',intro:'容量为目标 · 压力方式送气 · 逐口反馈',detail:'以压力控制方式供气，依据上一口完整呼吸的测量容量调整下一口压力。当前实现为公开说明的教学反馈控制器，不声称复刻厂商专有算法。'},
  VSV:{name:'VSV',intro:'自主支持呼吸 ＋ 容量目标',detail:'患儿触发并按流量切换，系统依据容量结果调整下一口支持压力。无有效触发时采用与本实验室PSV相同的后备状态；这是教学约定。'},
- VAPS:{name:'VAPS',intro:'一口气内的压力支持与容量补充',detail:'先按压力支持供气；达到流量切换条件而容量不足时，在同一口气内以补充流量继续供气，直至达到目标或最大吸气时间。简化原理参考教材第182—183页。'}
+ VAPS:{name:'VAPS',intro:'一口气内的压力支持与容量补充',detail:'先按压力支持供气；流量下降至预设容量补充流量且容量不足时，在同一口气内以补充流量继续供气，直至达到目标或最大吸气时间。简化原理参考教材第182—183页。'}
 };
 export const isSimv=(m:Mode,s:Settings)=>m.startsWith('SIMV')||(m==='VG'&&s.vgBase===1);
 export const hasVG=(m:Mode,s:Settings)=>m==='VG'||(m==='SIMV-PC'&&s.vgOn===1);
@@ -55,7 +55,7 @@ export function keysFor(m:Mode,s:Settings):Key[]{
  if(m==='VC'||m==='SIMV-VC') keys=['vt','delivery','pause','pattern','rr','limit'];
  else if(m==='PSV') keys=['ps','rise','ets','maxTi','limit'];
  else if(m==='VSV') keys=['vt','limit','rise','ets','maxTi'];
- else if(m==='VAPS') keys=['vt','ps','supplement','rr','rise','ets','maxTi','limit'];
+ else if(m==='VAPS') keys=['vt','ps','supplement','rr','rise','maxTi','limit'];
  else keys=[...(m==='VG'?['vgBase' as Key]:[]),...(hasVG(m,s)||m==='PRVC'?['vt','limit'] as Key[]:['dp','limit'] as Key[]),'ti','rr','rise'];
  if(m==='SIMV-PC') keys.push('vgOn');
  if(isSimv(m,s)){keys.push('psOn');if(s.psOn) keys.push('ps','ets','maxTi','rise');}
@@ -73,7 +73,7 @@ export function lockedParams(m:Mode,s:Settings):LockedParam[]{
   {key:'rr',label:'呼吸频率（监测）',kind:'derived',reason:'自主支持模式不设指令频率；由有效触发决定。后备频率在后备设置中单独调节。'},
   {key:'ti',label:'总吸气时间 Ti',kind:'derived',reason:m==='VC'||m==='SIMV-VC'?'由送气时间与吸气末暂停相加得到，不能再独立指定。':'由流量切换与最大吸气时间共同决定，实际时间是结果。'},
   {key:'ps',label:'自主呼吸压力支持 PS',kind:m==='VSV'?'automatic':'unavailable',reason:m==='VSV'?'支持压力由容量反馈自动调节，不能同时手动指定PS。':isSimv(m,s)?'尚未开启PSV；开启后才可调节自主支持。':'本模式没有独立的自主压力支持分支。'},
-  {key:'ets',label:'呼气切换阈值 ETS',kind:'unavailable',reason:isSimv(m,s)?'仅对开启PSV后的支持呼吸生效，不控制指令呼吸。':'本模式按设定时间切换，不能用ETS改变指令呼吸。'},
+  {key:'ets',label:'呼气切换阈值 ETS',kind:'unavailable',reason:m==='VAPS'?'本模式按预设容量补充流量判断转换，不使用PSV的峰流量百分比ETS。':isSimv(m,s)?'仅对开启PSV后的支持呼吸生效，不控制指令呼吸。':'本模式按设定时间切换，不能用ETS改变指令呼吸。'},
   {key:'maxTi',label:'支持呼吸最大 Ti',kind:'unavailable',reason:'本模式未启用流量切换的支持呼吸；指令吸气时间由指令设置控制。'},
   {key:'rise',label:'压力上升时间',kind:'derived',reason:'当前容量送气按所选流量轮廓控制，压力建立过程不是独立旋钮；启用PSV可调节支持分支。'},
   {key:'delivery',label:'容量送气时间',kind:'unavailable',reason:'当前不是预置流量的容量送气方式；请使用本模式的吸气或切换设置。'},

@@ -99,7 +99,8 @@ export class Engine {
    const limit=a.limit;
    if(vc||this.supplemental){
     const dur=vc?a.delivery:a.maxTi;
-    const shape=a.pattern===0?1: (1-.75*clamp(age/a.delivery,0,1))/.625;
+    const midpoint=Math.min(a.delivery,age+dt/2);
+    const shape=a.pattern===0?1:(1-.75*clamp(midpoint/a.delivery,0,1))/.625;
     const prescribed=vc?a.vt/1000/a.delivery*shape:a.supplement/60;
     const wanted=Math.min(prescribed,Math.max(0,a.vt-b.vti)/1000/dt);
     paw=(wanted+this.volume/(this.C*this.R)-mus/this.R)/(1/this.R+this.leakG);
@@ -115,7 +116,8 @@ export class Engine {
     if(paw>limit){paw=limit;b.limited=true;}
     q=this.pressureFlow(paw,mus,dt);deviceIn=Math.max(0,q)+Math.max(0,paw)*this.leakG;
     this.peak=Math.max(this.peak,Math.max(0,q));
-    const flowCycled=(supported||isVaps)&&age>Math.max(.12,a.rise)&&q<=this.peak*a.ets/100;
+    // VAPS switches against its preset VC flow, not PSV's percentage-of-peak ETS.
+    const flowCycled=(supported||isVaps)&&age>Math.max(.12,a.rise)&&(isVaps?q<=a.supplement/60:q<=this.peak*a.ets/100);
     if(isVaps&&flowCycled&&b.vti<a.vt){this.supplemental=true;this.log('同一口气转入容量补充','mode');}
     else if((supported||isVaps)?flowCycled||age>=a.maxTi:age>=(this.backup?a.backupTi:a.ti))this.expire();
    }
@@ -132,8 +134,10 @@ export class Engine {
    if(b)b.vte+=recovered*dt*1000;
    // 自主但未被机器支持的气流仍真实存在，不通过触发事件伪造。
   }
-  this.rawP=paw;this.rawQ=this.phase==='expiration'?-recovered:deviceIn;
-  if(this.phase==='expiration'&&mus>0)this.rawQ=q;
+  // Plot patient flow from the same integration that updates lung volume.
+  // The phase may have switched at this step's end; do not erase its final inspiratory flow.
+  // Device Vti/Vte remain separate measurements when leak is present.
+  this.rawP=paw;this.rawQ=q;
   const recent=this.breaths.filter(x=>x.end>this.t-10);
   const va=recent.reduce((n,x)=>n+Math.max(0,x.vte-30),0)/1000*6;
   const target=va>.015?.863*90/va:180;

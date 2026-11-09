@@ -23,3 +23,5 @@ button:active{filter:brightness(.94)}button:focus-visible,input:focus-visible,se
 .input-hint{font-size:12px;color:var(--muted);line-height:1.7;margin:12px 0 0}.explain-icon{color:#185d48;border-color:#43836a}.alarm-bar.normal>span{color:#175b48}
 
 @media(max-width:700px){.control-title{display:none}.input-hint{font-size:11px;margin:0;line-height:1.6}.control-tabs{margin-top:5px}.param-group{margin-top:14px}.controls.expanded .control-body{padding-top:10px}}
+
+.flow-relation{font-size:13px;line-height:1.8;color:#315665;background:#edf6f7;border:1px solid #c9dfe4;padding:10px 14px;border-radius:8px;margin-bottom:10px}.flow-relation b{color:#086654;font-variant-numeric:tabular-nums}
