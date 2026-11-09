@@ -1,13 +1,15 @@
 import {DEFAULT,PATIENT,PARAMS,editableKeys,hasVG,isSimv,validate,type Settings,type Patient,type Mode,type Key} from './config';
 export type BreathKind='指令'|'支持'|'自主'|'后备'|'容量补充';
 export interface Sample {t:number;p:number;q:number;v:number;effort:number;kind:string;trigger:string}
-export interface Breath {start:number;end:number;kind:BreathKind;trigger:string;vti:number;vte:number;lungIn:number;pip:number;plat:number|null;ti:number;dp:number;limited:boolean}
-export interface Event {t:number;label:string;type:'effort'|'success'|'missed'|'auto'|'mode'}
+export interface LoopPoint {t:number;p:number;q:number;v:number;deviceQ:number;deviceV:number;phase:string;effort:number}
+export interface Breath {initialPeep:number;initialVolume:number;passiveSealed:boolean;constantVC:boolean;nominalFlow:number;C:number;R:number;endFlow:number;start:number;end:number;kind:BreathKind;trigger:string;vti:number;vte:number;lungIn:number;pip:number;plat:number|null;ti:number;dp:number;limited:boolean}
+export interface Event {delayMs?:number;t:number;label:string;type:'effort'|'success'|'missed'|'auto'|'mode'}
 export interface Snapshot {t:number;phase:string;kind:string;backup:boolean;pip:number;vti:number;vte:number;mv:number|null;rate:number|null;effortRate:number|null;spo2:number;co2:number;ph:number;autoDp:number;plat:number|null;totalPeep:number;alarms:string[];limited:boolean;domain:boolean;pending:boolean;peakFlow:number}
 const clamp=(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x));
 export class Engine {
  mode:Mode='PC'; settings:Settings={...DEFAULT}; patient:Patient={...PATIENT};
  t=0; volume=.06; phase:'inspiration'|'pause'|'expiration'='expiration'; samples:Sample[]=[]; breaths:Breath[]=[]; events:Event[]=[];
+ loopCurrent:LoopPoint[]=[];loopPrevious:LoopPoint[]=[];previousLoopComplete=false;private loopBase=0;private deviceVolume=0;private stepSize=.005;
  backup=false; autoDp=12; co2=40; spo2=96; ph=7.4; pending:Partial<Settings>|null=null; pendingMode:Mode|null=null;
  private active:Settings={...DEFAULT}; private start=0; private expStart=-1; private nextMandatory=0; private lastEffective=0; private current:Breath|null=null;
  private peak=0; private supplemental=false; private nextEffort=0; private effortStart=-100; private effortHandled=true; private lastSignal=0; private lastAuto=-100; private sampleAt=0; private rawP=5; private rawQ=0; private endPeep=5;
@@ -26,14 +28,15 @@ export class Engine {
    if(!after.has(key))return `${PARAMS[key]?.label??key}在当前模式下已锁定，不能直接调节。`;
   }
   const next={...candidate,...(patch.vgOn===0&&this.settings.vgOn===1?{dp:this.autoDp}:{})};const error=validate(next,effectiveMode);if(error)return error;
+  if(this.current&&('peep' in patch))this.current.passiveSealed=false;
   this.settings=next;this.pending={...this.pending,...patch};return null;
  }
- setPatient(patch:Partial<Patient>){this.patient={...this.patient,...patch};if(patch.spontaneous===1)this.nextEffort=this.t+.1;}
+ setPatient(patch:Partial<Patient>){if(this.current)this.current.passiveSealed=false;this.patient={...this.patient,...patch};if(patch.spontaneous===1)this.nextEffort=this.t+.1;}
  switchMode(mode:Mode,s?:Settings){this.pendingMode=mode;if(s)this.settings={...s};}
  returnPSV(){this.backup=false;this.lastEffective=this.t;this.nextMandatory=this.t;this.log('手动返回自主支持','mode');}
  reset(mode:Mode=this.mode){Object.assign(this,new Engine());this.mode=mode;}
- private log(label:string,type:Event['type']){this.events.push({t:this.t,label,type});if(this.events.length>500)this.events.shift();}
- private finish(){
+ private log(label:string,type:Event['type'],delayMs?:number){this.events.push({t:this.t,label,type,delayMs});if(this.events.length>500)this.events.shift();}
+ private finish(complete=true){
   const b=this.current;if(!b)return;
   b.end=this.t;this.breaths.push({...b});if(this.breaths.length>160)this.breaths.shift();
   if(!this.backup&&((hasVG(this.mode,this.active)&&b.kind==='指令')||this.mode==='PRVC'||this.mode==='VSV')){
@@ -41,17 +44,19 @@ export class Engine {
    const error=this.active.vt-feedback;
    if(Math.abs(error)>this.active.vt*.05)this.autoDp=clamp(this.autoDp+clamp(.5*error/1000/this.C,-2,2),2,Math.max(2,this.active.limit-this.active.peep));
   }
+  this.previousLoopComplete=complete;this.loopPrevious=this.loopCurrent.map(p=>({...p}));this.loopCurrent=[];
   this.current=null;
  }
  private applyMode(){
   if(!this.pendingMode)return;
-  this.finish();this.mode=this.pendingMode;this.pendingMode=null;this.backup=false;this.autoDp=clamp(this.autoDp,2,this.settings.limit-this.settings.peep);this.nextMandatory=this.t;this.lastEffective=this.t;this.log('模式已切换','mode');
+  this.finish(false);this.mode=this.pendingMode;this.pendingMode=null;this.backup=false;this.autoDp=clamp(this.autoDp,2,this.settings.limit-this.settings.peep);this.nextMandatory=this.t;this.lastEffective=this.t;this.log('模式已切换','mode');
  }
  private begin(kind:BreathKind,trigger:string){
   this.endPeep=this.volume/this.C;this.finish();this.applyMode();this.active={...this.settings};this.pending=null;
   this.autoDp=clamp(this.autoDp,2,Math.max(2,this.active.limit-this.active.peep));
   this.phase='inspiration';this.start=this.t;this.peak=0;this.supplemental=false;
-  this.current={start:this.t,end:this.t,kind,trigger,vti:0,vte:0,lungIn:0,pip:this.active.peep,plat:null,ti:0,dp:this.autoDp,limited:false};
+  this.loopBase=this.volume;this.deviceVolume=0;this.loopCurrent=[{t:this.t-this.stepSize,p:this.rawP,q:this.rawQ*60,v:0,deviceQ:0,deviceV:0,phase:'expiration',effort:0}];
+  this.current={initialPeep:this.endPeep,initialVolume:this.volume,passiveSealed:!this.patient.spontaneous&&this.patient.leak===0,constantVC:(this.mode==='VC'||this.mode==='SIMV-VC')&&this.active.pattern===0&&(kind==='指令'),nominalFlow:this.active.vt/1000/this.active.delivery,C:this.C,R:this.R,endFlow:0,start:this.t,end:this.t,kind,trigger,vti:0,vte:0,lungIn:0,pip:this.active.peep,plat:null,ti:0,dp:this.autoDp,limited:false};
   if(kind==='指令'||kind==='后备')this.nextMandatory=this.t+this.cycle;
  }
  private expire(){if(this.current)this.current.ti=this.t-this.start;this.phase='expiration';this.expStart=this.t;}
@@ -59,7 +64,7 @@ export class Engine {
   const eq=this.C*(paw+mus);const next=eq+(this.volume-eq)*Math.exp(-dt/(this.R*this.C));const q=(next-this.volume)/dt;this.volume=next;return q;
  }
  step(dt=.005){
-  this.t+=dt;
+  this.stepSize=dt;this.t+=dt;
   if(this.pendingMode&&this.phase==='expiration'&&this.t-this.expStart>.12)this.applyMode();
   if(this.patient.spontaneous&&this.t>=this.nextEffort){
    if(!this.effortHandled&&this.effortStart>-1)this.log('无效吸气努力','missed');
@@ -83,14 +88,14 @@ export class Engine {
     if(this.backup)kind='后备';
     else if(this.simv)kind=this.t>=this.nextMandatory-this.cycle*.2?'指令':(s.psOn?'支持':'自主');
     else kind=this.supportOnly?'支持':'指令';
-    if(effective){this.lastEffective=this.t;this.effortHandled=true;this.log('有效患者触发','success');}
+    if(effective){this.lastEffective=this.t;this.effortHandled=true;this.log('有效患者触发','success',Math.max(0,(this.t-this.effortStart)*1000));}
     else{this.lastAuto=this.t;this.log('漏气扰动误触发','auto');}
     this.begin(kind,effective?'患者触发':'误触发');
    }
    this.lastSignal=signal;
    if(this.phase==='expiration'&&(!this.supportOnly||this.backup)&&this.t>=this.nextMandatory)this.begin(this.backup?'后备':'指令','时间触发');
   }
-  const a=this.active;const b=this.current;let paw=s.peep;let q=0;let deviceIn=0, recovered=0;
+  const a=this.active;const b=this.current;const phaseDuring=this.phase;let paw=s.peep;let q=0;let deviceIn=0, recovered=0;
   if(this.phase==='inspiration'&&b){
    const age=this.t-this.start;const supported=b.kind==='支持'||b.kind==='自主';
    const vc=!this.backup&&!supported&&(this.mode==='VC'||this.mode==='SIMV-VC');
@@ -121,12 +126,13 @@ export class Engine {
     if(isVaps&&flowCycled&&b.vti<a.vt){this.supplemental=true;this.log('同一口气转入容量补充','mode');}
     else if((supported||isVaps)?flowCycled||age>=a.maxTi:age>=(this.backup?a.backupTi:a.ti))this.expire();
    }
+   this.peak=Math.max(this.peak,Math.max(0,q));
    b.vti+=Math.max(0,deviceIn)*dt*1000;b.lungIn+=Math.max(0,q)*dt*1000;b.pip=Math.max(b.pip,paw);
    if(this.supplemental&&this.t-this.start>=a.maxTi)this.expire();
   }else if(this.phase==='pause'&&b){
    paw=this.volume/this.C-mus;q=0;
    if(this.leakG>0){q=-Math.max(0,paw)*this.leakG;this.volume+=q*dt;}
-   if(!this.patient.spontaneous&&this.patient.leak===0)b.plat=paw;
+   if(b.passiveSealed&&!this.patient.spontaneous&&this.patient.leak===0)b.plat=paw;else b.plat=null;
    if(this.t-this.start>=a.delivery+a.pause)this.expire();
   }else{
    paw=s.peep;q=this.pressureFlow(paw,mus,dt);
@@ -138,6 +144,13 @@ export class Engine {
   // The phase may have switched at this step's end; do not erase its final inspiratory flow.
   // Device Vti/Vte remain separate measurements when leak is present.
   this.rawP=paw;this.rawQ=q;
+  if(b){
+   const deviceQ=phaseDuring==='inspiration'?deviceIn:phaseDuring==='expiration'?-recovered:0;
+   this.deviceVolume+=deviceQ*dt*1000;
+   this.loopCurrent.push({t:this.t,p:paw,q:q*60,v:(this.volume-this.loopBase)*1000,deviceQ:deviceQ*60,deviceV:this.deviceVolume,phase:phaseDuring,effort:mus});
+   if(this.loopCurrent.length>12000)this.loopCurrent.shift();
+   if(phaseDuring==='expiration')b.endFlow=q*60;
+  }
   const recent=this.breaths.filter(x=>x.end>this.t-10);
   const va=recent.reduce((n,x)=>n+Math.max(0,x.vte-30),0)/1000*6;
   const target=va>.015?.863*90/va:180;
@@ -150,6 +163,19 @@ export class Engine {
   if(this.t>=this.sampleAt){this.sampleAt=this.t+.02;this.samples.push({t:this.t,p:paw,q:this.rawQ*60,v:(this.volume-.06)*1000,effort:mus,kind:b?.kind??'',trigger:b?.trigger??''});if(this.samples.length>650)this.samples.shift();}
  }
  advance(seconds:number){const n=Math.round(seconds/.005);for(let i=0;i<n;i++)this.step(.005);}
+ interaction(){
+  const events=this.events.filter(e=>e.t>this.t-60);const successes=events.filter(e=>e.type==='success');
+  return {efforts:events.filter(e=>e.type==='effort').length,successes:successes.length,missed:events.filter(e=>e.type==='missed').length,
+   automatic:events.filter(e=>e.type==='auto').length,delayMs:successes.at(-1)?.delayMs??null,window:Math.min(60,this.t)};
+ }
+ mechanics(){
+  const b=this.breaths.at(-1);const valid=!!b&&this.previousLoopComplete&&b.passiveSealed&&b.constantVC&&!b.limited&&b.plat!==null;
+  const driving=valid?b!.plat!-b!.initialPeep:null;
+  return {C:this.C*1000,R:this.R,tau:this.C*this.R,driving:driving!==null&&driving>0?driving:null,
+   measuredC:driving!==null&&driving>0?b!.lungIn/driving:null,
+   measuredR:valid&&b!.vti>0?(b!.pip-b!.plat!)/b!.nominalFlow:null,
+   intrinsic:Math.max(0,this.endPeep-this.settings.peep),lastEndFlow:b?.endFlow??null};
+ }
  snapshot():Snapshot{
   const b=this.breaths.at(-1);const live=this.current;
   const window=this.breaths.filter(x=>x.end>this.t-60);
